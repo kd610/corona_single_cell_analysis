@@ -35,8 +35,10 @@ def main(num_kfold=5):
         print("----------------Using an input representation: ", rep, " ------------------")
         if rep == "X_umap":
             rep_name = "UMAP"
+            rep_name_small = 'umap'
         else:
             rep_name = "PCA"
+            rep_name_small='pca'
 
         # K-fold cross validation for train and test.
         result_k_fold = dict()
@@ -71,7 +73,10 @@ def main(num_kfold=5):
                 adata.obs.at[index, "covid_non_covid"] = new_value
 
             # Create a dataframe that contains the UMAP values (1 & 2), sample_vector, batch_vector, covid_non_covid_vector.
-            basis_values = adata.obsm[rep]  # X_umap or X_pca
+            if rep=='X_umap':
+                basis_values = adata.obsm[rep]  # X_umap
+            else:
+                basis_values = adata.obsm['X_pca'][:, :2]  # X_pca
             sample_vector = adata.obs["sampleID_label"].values
             # covid_non_covid_vector = adata.obs['covid_non_covid'].values
             batch_vector = adata.obs["batch"].values  # Define whether the cell is from the train or test set.
@@ -85,9 +90,19 @@ def main(num_kfold=5):
             ###
             df = pd.DataFrame(
                 list(zip(basis_values, sample_vector, batch_vector, x_basis_value, y_basis_value)),
-                columns=["basis_value", "sample", "batch", "x_basis_value", "y_basis_value"],
+                columns=["basis_value", "sample", "batch", f"{rep_name_small}1", f"{rep_name_small}2"],
             )
             print(f"Created a dataframe that contains the {rep_name} values (1 & 2), sample_vector, batch_vector, covid_non_covid_vector.")
+            
+            list_covid_non_covid = []
+            for index, row in df.iterrows():
+                if "mild/moderate" in row['sample'] or "severe/critical" in row['sample']:
+                    list_covid_non_covid.append('covid')
+                else:
+                    list_covid_non_covid.append('non_covid')
+
+            df['covid_non_covid'] = list_covid_non_covid
+            df
 
             # Delete the below variables to free up memory.
             del basis_values
@@ -103,34 +118,41 @@ def main(num_kfold=5):
             print("Num of test samples:", len(y_test))
 
             # Create dataframe for the train samples.
+            # Get a centroid of each sample: exist (train)
             y_train = list(y_train)
             df_exist = df.query("sample == @y_train")
-
-            # Get centroids of each existing samples.
             X = np.stack(df_exist.basis_value.values.tolist()[:])
-            y = df_exist["sample"].tolist()
+            y = df_exist['sample'].tolist()
             clf = NearestCentroid()
             clf.fit(X, y)
 
-            # Create dataframe for the test samples.
             y_test = list(y_test)
             df_new = df.query("sample == @y_test")
-            # Create input features and labels for the test samples.
+            #df_new
+
             X_new = np.stack(df_new.basis_value.values.tolist()[:])
-            y_new = df_new["sample"].tolist()
-            # Get the nearest centroids with new samples.
+            y_new = df_new['sample'].tolist()
+
             y_pred = []
             for x_new in X_new:
                 y_pred.append(clf.predict([x_new]))
 
             y_pred = np.squeeze(np.stack(y_pred[:]))
 
+            # Get a centroid of each sample: new (test)
+            X_new = np.stack(df_new.basis_value.values.tolist()[:])
+            y_new = df_new['sample'].tolist()
+
             clf_new = NearestCentroid()
             clf_new.fit(X_new, y_new)
-            
+
             exist_sample_centroids = clf.centroids_
-            #new_sample_centroids = clf_new.centroids_
-            
+            #print("exist_sample_centroids:", exist_sample_centroids)
+            new_sample_centroids = clf_new.centroids_
+
+            # result_dict = dict(zip(np.unique(np.array(y_new)),clf_new.centroids_))
+            # print(result_dict)
+
             # Make covid_non_covid column
             list_covid_non_covid = []
             for index, row in df_exist.iterrows():
@@ -151,13 +173,16 @@ def main(num_kfold=5):
             df_new['covid_non_covid'] = list_covid_non_covid
             
             ### Compute a distance
+            print("Compute a distance...")
             for i in range(len(exist_sample_centroids)):
                 cur_centroid = np.array(exist_sample_centroids[i])
                 # Traverse each row to calculate the distance between the centroid 
                 # and the coordinates of each sample.
                 temp_dist_sample_centroids = []
+                #print("cur_centroid:", cur_centroid)
                 for index, row in df_exist.iterrows():
-                    coord = np.array([row['umap1'], row['umap2']])
+                    coord = np.array([row[f'{rep_name_small}1'], row[f'{rep_name_small}2']])
+                    #print("coord:", coord)
                     dist = np.linalg.norm(cur_centroid - coord)
 
                     temp_dist_sample_centroids.append(dist)
@@ -169,19 +194,21 @@ def main(num_kfold=5):
             X_train = df_exist.drop(['basis_value', 'sample', 'batch', 'covid_non_covid'], axis=1)
             y_train = df_exist['covid_non_covid']
 
+            print("Train the SVM model...")
             # Instantiate the model
             cls = SVC()
             # Train/Fit the model 
             cls.fit(X_train, y_train)
             
             # Get distance between a new sample and existing centroids
+            print("Get distance between a new sample and existing centroids...")
             for i in range(len(exist_sample_centroids)):
                 cur_centroid = np.array(exist_sample_centroids[i])
                 # Traverse each row to calculate the distance between the centroid 
                 # and the coordinates of each sample.
                 temp_dist_sample_centroids = []
                 for index, row in df_new.iterrows():
-                    coord = np.array([row['umap1'], row['umap2']])
+                    coord = np.array([row[f'{rep_name_small}1'], row[f'{rep_name_small}2']])
                     dist = np.linalg.norm(cur_centroid - coord)
 
                     temp_dist_sample_centroids.append(dist)
@@ -190,6 +217,7 @@ def main(num_kfold=5):
                 df_new[f'dist_centorid_{i}'] = temp_dist_sample_centroids
 
             # Run prediction
+            print("Run prediction...")
             X_test = df_new.drop(['basis_value', 'sample', 'batch', 'covid_non_covid'], axis=1)
             y_test = df_new['covid_non_covid']
             y_pred = cls.predict(X_test)
@@ -203,7 +231,7 @@ def main(num_kfold=5):
                 else:
                     pred_label_count[row['sample']][1] += 1
 
-            print("pred_label_count:", pred_label_count)
+            #print("pred_label_count:", pred_label_count)
 
             y_pred = []
             y_true = []
@@ -245,6 +273,15 @@ def main(num_kfold=5):
             del y_pred
             del clf
             del df
+            del X_train
+            del y_train
+            del X_test
+            del y_test
+            del y_pred
+            del pred_label_count
+            del list_covid_non_covid
+            del list_covid_non_covid
+            del clf_new
             #del adata
 
         print("----------------------------------------------------------------------")
