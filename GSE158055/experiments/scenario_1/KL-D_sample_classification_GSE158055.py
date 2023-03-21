@@ -34,7 +34,8 @@ RANDOM_SEED = 110011
 def main(num_kfold=5):
     # Run experimetns for the representation of UMAP and PCA.
     result_rep = dict()
-    for rep in ['X_pca', 'X_umap']:
+    #for rep in ['X_pca', 'X_umap']:
+    for rep in ['X_umap']:
         print("----------------Using an input representation: ", rep, " ------------------")
         if rep == 'X_umap':
             rep_name = 'UMAP'
@@ -49,7 +50,7 @@ def main(num_kfold=5):
         recall_score_list = []
         f1_score_list = []
         
-        for k in tqdm(range(num_kfold)):
+        for k in tqdm(range(4, num_kfold)):
             start_time = time.time()
             print(f"k_fold cross validation (split randomly for train and test): k={k}")
             print("Started at: ", start_time)
@@ -234,7 +235,7 @@ if __name__ == "__main__":
     # Create the parser
     parser = argparse.ArgumentParser(description='Example script')
     # Define the arguments
-    parser.add_argument('--num_kfold', type=int, help='Number of k fold cross validation')
+    parser.add_argument('--num_kfold', type=int, help='Number of k fold cross validation', default=5)
     # Parse the arguments
     args = parser.parse_args()
 

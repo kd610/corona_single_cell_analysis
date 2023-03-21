@@ -206,6 +206,7 @@ def calc_nearest_centroids(exist_sample_centroids, new_sample_centroids, list_ex
         
     return y_true_nearest, y_pred_nearest
 
+
 def performance_eval(y_true, y_pred):
     # Model Accuracy: how often is the classifier correct?
     acc = metrics.accuracy_score(y_true, y_pred)

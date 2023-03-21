@@ -1,9 +1,8 @@
 from numpy.random import default_rng
-from sklearn.model_selection import KFold
 import numpy as np
-from matplotlib import pyplot as plt
 from collections import Counter
 from sklearn import metrics
+import heapq
 
 # Compute KL Divergence
 """KL Divergence(P|Q)"""
@@ -105,33 +104,50 @@ def calc_dist_centroids(exist_sample_centroids, new_sample_centroids, list_exist
     Otherwise, The new sample is Non-covid.
     """
     dict_dist_results = {s: [] for s in list_new_sample}
-    for i in range(len(exist_sample_centroids)):
+    # for i in range(len(exist_sample_centroids)):
+    #     # print("---------------------")
+    #     # print("Exist sample:", list_exist_sample[i])
+    #     #sample_key = list_exist_sample[i]
+    #     for j in range (len(new_sample_centroids)):
+    #         sample = list_new_sample[j]
+    #         #print('sample:', list_new_sample[j])
+    #         dist = np.linalg.norm(np.array(exist_sample_centroids[i]) - np.array(new_sample_centroids[j]))
+    #         #print(dist)
+    #         dict_dist_results[sample].append(dist)
+    
+    for i in range(len(new_sample_centroids)):
         # print("---------------------")
         # print("Exist sample:", list_exist_sample[i])
         #sample_key = list_exist_sample[i]
-        for j in range (len(new_sample_centroids)):
-            sample = list_new_sample[j]
+        sample = list_new_sample[i]
+        for j in range (len(exist_sample_centroids)):
+            #sample = list_new_sample[j]
             #print('sample:', list_new_sample[j])
-            dist = np.linalg.norm(np.array(exist_sample_centroids[i]) - np.array(new_sample_centroids[j]))
+            dist = np.linalg.norm(np.array(exist_sample_centroids[j]) - np.array(new_sample_centroids[i]))
             #print(dist)
             dict_dist_results[sample].append(dist)
-            
-
+    
+    k = 5 # specify the value of k
     new_dist_total = {s: {'covid': 0, 'non_covid': 0} for s in list_new_sample}
 
     # Summing up the distance of exist covid sample and non covid sample between each ewn sample.
-    for i in range(len(list_exist_sample)):
-        exist_sample = list_exist_sample[i]
-        print(exist_sample)
-        for new_s in dict_dist_results.keys():
-            dist = dict_dist_results[new_s][i]
-            if "mild/moderate" in exist_sample or "severe/critical" in exist_sample:
-                new_dist_total[new_s]['covid'] += dist
-            elif "control" in exist_sample:
-                new_dist_total[new_s]['non_covid'] += dist
+    for s in dict_dist_results:
+        smallest_k_values = heapq.nsmallest(k, dict_dist_results[s])
+        smallest_k_indexes = [i for i, v in enumerate(dict_dist_results[s]) if v in smallest_k_values]
+        #print(smallest_k_indexes)
+        for idx_e_s in smallest_k_indexes:
+            exist_sample = list_exist_sample[idx_e_s]
+            #print(exist_sample)
+            for new_s in dict_dist_results.keys():
+                dist = dict_dist_results[new_s][idx_e_s]
+                if "mild/moderate" in exist_sample or "severe/critical" in exist_sample:
+                    new_dist_total[new_s]['covid'] += dist
+                elif "control" in exist_sample:
+                    new_dist_total[new_s]['non_covid'] += dist
 
     y_true_total_dist = []
     y_pred_total_dist = []
+    #print("new_dist_total:", new_dist_total)
 
     for new_s, dist_total in new_dist_total.items():
         if "mild/moderate" in new_s or "severe/critical" in new_s:
@@ -140,11 +156,13 @@ def calc_dist_centroids(exist_sample_centroids, new_sample_centroids, list_exist
             y_true_total_dist.append('non_covid')
 
         # Compare the total distance to centroid with corona & non corona samples    
-        if dist_total['covid'] < dist_total['non_covid']:
+        if dist_total['covid'] > dist_total['non_covid']:
             y_pred_total_dist.append('covid')
         else:
             y_pred_total_dist.append('non_covid')
             
+    del dict_dist_results
+    del new_dist_total
     
     return y_true_total_dist, y_pred_total_dist
 
@@ -153,21 +171,24 @@ def calc_nearest_centroids(exist_sample_centroids, new_sample_centroids, list_ex
     Calculate the nearest centroid of the existing samples and the new samples.
     """
     dict_dist_results = {s: [] for s in list_new_sample}
-    for i in range(len(exist_sample_centroids)):
+    for i in range(len(new_sample_centroids)):
         # print("---------------------")
         # print("Exist sample:", list_exist_sample[i])
         #sample_key = list_exist_sample[i]
-        for j in range (len(new_sample_centroids)):
-            sample = list_new_sample[j]
+        sample = list_new_sample[i]
+        for j in range (len(exist_sample_centroids)):
+            #sample = list_new_sample[j]
             #print('sample:', list_new_sample[j])
-            dist = np.linalg.norm(np.array(exist_sample_centroids[i]) - np.array(new_sample_centroids[j]))
+            dist = np.linalg.norm(np.array(exist_sample_centroids[j]) - np.array(new_sample_centroids[i]))
             #print(dist)
             dict_dist_results[sample].append(dist)
-            
+    
+    #print('dict_dist_results:', dict_dist_results)
     y_true_nearest = []
     y_pred_nearest = []
 
     for new_s, coords_centroid in dict_dist_results.items():
+        #print('new_s:', new_s)
         nearest_sample_index = np.argmin(np.array(coords_centroid))
         nearest_sample = list_exist_sample[nearest_sample_index]
 
@@ -182,19 +203,66 @@ def calc_nearest_centroids(exist_sample_centroids, new_sample_centroids, list_ex
             y_pred_nearest.append('covid')
         else:
             y_pred_nearest.append('non_covid')
-                
         
-        return y_true_nearest, y_pred_nearest
+    return y_true_nearest, y_pred_nearest
+
+def calc_k_nearest_centroids(k, exist_sample_centroids, new_sample_centroids, list_exist_sample, list_new_sample):
+    """
+    Calculate the k nearest centroid of the existing samples and the new samples.
+    """
+    dict_dist_results = {s: [] for s in list_new_sample}
+    for i in range(len(new_sample_centroids)):
+        # print("---------------------")
+        # print("Exist sample:", list_exist_sample[i])
+        #sample_key = list_exist_sample[i]
+        sample = list_new_sample[i]
+        for j in range (len(exist_sample_centroids)):
+            #sample = list_new_sample[j]
+            #print('sample:', list_new_sample[j])
+            dist = np.linalg.norm(np.array(exist_sample_centroids[j]) - np.array(new_sample_centroids[i]))
+            #print(dist)
+            dict_dist_results[sample].append(dist)
+    
+    y_true_k_nearest = []
+    y_pred_k_nearest = []
+
+    # Get the k nearest samples
+    for new_s, coords_centroid in dict_dist_results.items():
+        k_nearest_sample_index = np.argsort(coords_centroid)[:k]
+        nearest_samples = list_exist_sample[k_nearest_sample_index]
+        
+        # Assign a label to y_true
+        if "mild/moderate" in new_s or "severe/critical" in new_s:
+            y_true_k_nearest.append('covid')
+        else:
+            y_true_k_nearest.append('non_covid')
+        
+        # Assign a label to y_pred based on the count of k nearest samples.
+        covid_count = 0
+        non_covid_count = 0
+
+        for item in nearest_samples:
+            if "mild/moderate" in item or "severe/critical" in item:
+                covid_count += 1
+            else:
+                non_covid_count += 1
+        
+        if covid_count > non_covid_count:
+            y_pred_k_nearest.append('covid')
+        else:
+            y_pred_k_nearest.append('non_covid')
+        
+    return y_true_k_nearest, y_pred_k_nearest
 
 def performance_eval(y_true, y_pred):
     # Model Accuracy: how often is the classifier correct?
     acc = metrics.accuracy_score(y_true, y_pred)
 
     # Model Precision: what percentage of positive tuples are labeled as such?
-    precision = metrics.precision_score(y_true, y_pred,  average='micro')
+    precision = metrics.precision_score(y_true, y_pred,  average='macro')
 
     # Model Recall: what percentage of positive tuples are labelled as such?
-    recall = metrics.recall_score(y_true, y_pred, average='micro')
+    recall = metrics.recall_score(y_true, y_pred, average='macro')
     
     # Model F1: what percentage of positive tuples are labelled as such?
     f1 = metrics.f1_score(y_true, y_pred, average='macro')

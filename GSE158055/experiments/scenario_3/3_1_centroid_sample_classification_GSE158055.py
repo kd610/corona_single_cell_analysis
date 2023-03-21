@@ -15,7 +15,7 @@ import warnings
 from sklearn.neighbors import NearestCentroid
 from tqdm import tqdm
 import time
-from sklearn.svm import SVC
+from sklearn.svm import SVC, LinearSVC
 
 warnings.filterwarnings("ignore")
 
@@ -174,7 +174,7 @@ def main(num_kfold=5):
             
             ### Compute a distance
             print("Compute a distance...")
-            for i in range(len(exist_sample_centroids)):
+            for i in tqdm(range(len(exist_sample_centroids))):
                 cur_centroid = np.array(exist_sample_centroids[i])
                 # Traverse each row to calculate the distance between the centroid 
                 # and the coordinates of each sample.
@@ -196,7 +196,7 @@ def main(num_kfold=5):
 
             print("Train the SVM model...")
             # Instantiate the model
-            cls = SVC()
+            cls = LinearSVC()
             # Train/Fit the model 
             cls.fit(X_train, y_train)
             
@@ -249,7 +249,7 @@ def main(num_kfold=5):
                     y_true.append("non_covid")
             
             # Compute the performance metrics.
-            acc, precision, recall, f1 = performance_eval(y_pred, y_pred)
+            acc, precision, recall, f1 = performance_eval(y_true, y_pred)
 
             print("Result of k_fold cross validation k =", k)
             print("Accuracy =", acc)
@@ -270,7 +270,6 @@ def main(num_kfold=5):
             del X
             del y
             del y_new
-            del y_pred
             del clf
             del df
             del X_train
@@ -280,9 +279,8 @@ def main(num_kfold=5):
             del y_pred
             del pred_label_count
             del list_covid_non_covid
-            del list_covid_non_covid
             del clf_new
-            #del adata
+            del adata
 
         print("----------------------------------------------------------------------")
         print(
