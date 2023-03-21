@@ -1,0 +1,10 @@
+cache/*
+data/*
+scanpy_custom/*
+GSE158055/experiments/scenario_1/__pycache__/*
+GSE158055/experiments/scenario_1/.ipynb_checkpoints/*
+GSE158055/experiments/scenario_2/__pycache__/*
+GSE158055/experiments/scenario_3/__pycache__/*
+GSE158055/experiments/scenario_3/.ipynb_checkpoints/*
+GSE158055/data/*
+GSE158055/figures/*
