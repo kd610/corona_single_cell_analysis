@@ -7,12 +7,13 @@ import warnings
 from tqdm import tqdm
 import time
 from numpy.random import default_rng
-
+import warnings
 from sklearn.model_selection import train_test_split
 
 #np.random.seed(41)
 sc.settings.verbosity = 0
 RANDOM_SEED = 110011
+warnings.filterwarnings("ignore")
 
 
 def n_random_sampling(adata, n=1, max_samples_covid=128, max_samples_control=28, RANDOM_SEED=110011):
@@ -116,56 +117,68 @@ def main(num_neighbors=100):
     # Number of neighboring datasets to generate
     
     print("Reading a h5ad data file...")
-    adata = sc.read_h5ad('./data/GSE_158055_COVID19_ALL.h5ad')
-
+    #adata = sc.read_h5ad('./data/GSE_158055_COVID19_ALL.h5ad')
+    num_kfold = 5
     # Perform PCA/UMAP on neighboring datasets and calculate the differences
-    for rep in ['X_pca', 'X_umap']:
+    #for rep in ['X_pca', 'X_umap']:
+    for rep in ['X_umap']:
         print("----------------Using an input representation: ", rep, " ------------------")
         if rep == 'X_umap':
             rep_name = 'UMAP'
         else:
             rep_name = 'PCA'
             
-        
-        start_time = time.time()
-        print('Started at: ', start_time)
-        adata = sampling_adata(adata)
+        for k in tqdm(range(num_kfold)):
+            start_time = time.time()
+            print('Started at: ', start_time)
+            # adata = sampling_adata(adata)
 
-        # Split the samples into train and test. Train is only related to estimate sensitivity.
-        list_samples = list(adata.obs['sampleID_label'].unique())
-        y_train, _ = train_test_split(list_samples, test_size=0.20)
-        # Make adata for train/existing data.
-        # Make a column that contains bool values based on whether the sample_name holds one of the samples in the y_train..
-        adata.obs['contain_y_train'] = adata.obs['sampleID_label'].isin(y_train)
-        adata_train = adata[adata.obs['contain_y_train'] == True,:].copy()
-        
-        # Perform PCA or UMAP on the original adata_train.
-        print(f"Run {rep_name} on the adata_train.")
-        sc.pp.neighbors(adata_train, n_pcs = 30, n_neighbors = 20) 
-        sc.tl.pca(adata_train)
-        if rep == 'X_umap':
-            print("Running UMAP on the adata_train.")
-            sc.tl.umap(adata_train)
-             
-        # Run estimation
-        max_diff = 0
-        for i in tqdm(range(num_neighbors)):
-            adata_train_neighbor = create_neighboring_dataset(adata_train)
-            # Run PCA and neighbour graph on the adata_train. 
-            print("Running PCA and neighbour graph on the adata_train_neighbor.")
-            sc.pp.neighbors(adata_train_neighbor, n_pcs = 30, n_neighbors = 20) 
-            sc.tl.pca(adata_train_neighbor)
-            if rep == 'X_umap':
-                print("Running UMAP on the adata_train_neighbor.")
-                sc.tl.umap(adata_train_neighbor)
-            # Calculate the difference between the original adata_train and the neighboring adata_train.
-            diff = rep_difference(adata_train.obsm[rep], adata_train_neighbor.obsm[rep])
-            print(f"Diff in iteration {i}:", diff)
-            max_diff = max(max_diff, diff)
+            # # Split the samples into train and test. Train is only related to estimate sensitivity.
+            # list_samples = list(adata.obs['sampleID_label'].unique())
+            # y_train, _ = train_test_split(list_samples, test_size=0.20)
+            # # Make adata for train/existing data.
+            # # Make a column that contains bool values based on whether the sample_name holds one of the samples in the y_train..
+            # adata.obs['contain_y_train'] = adata.obs['sampleID_label'].isin(y_train)
+            # adata_train = adata[adata.obs['contain_y_train'] == True,:].copy()
             
-        # Estimated sensitivity
-        sensitivity_pca = max_diff
-        print(f"Estimated sensitivity for {rep_name} output:", sensitivity_pca)
+            # # Perform PCA or UMAP on the original adata_train.
+            # print(f"Run {rep_name} on the adata_train.")
+            # sc.pp.neighbors(adata_train, n_pcs = 30, n_neighbors = 20) 
+            # sc.tl.pca(adata_train)
+            # if rep == 'X_umap':
+            #     print("Running UMAP on the adata_train.")
+            #     sc.tl.umap(adata_train)
+            
+            # Read pre-generated adata file for the k-th fold. 
+            k_file = f'./data/k{k}_{rep_name}_adata_GSE_158055_COVID19.h5ad'
+            print("Reading a h5ad data file:", k_file)
+            adata = sc.read_h5ad(k_file)
+            print("Finished reading the h5ad data file...")
+            # Get adata with adata.obs['batch'] = 'ref'.
+            adata_train = adata[adata.obs['batch'] == 'ref'].copy()
+            del adata
+                
+            # Run estimation
+            max_diff = 0
+            for i in tqdm(range(num_neighbors)):
+                adata_train_neighbor = create_neighboring_dataset(adata_train)
+                # Run PCA and neighbour graph on the adata_train. 
+                print("Running PCA and neighbour graph on the adata_train_neighbor.")
+                sc.pp.neighbors(adata_train_neighbor, n_pcs = 30, n_neighbors = 20) 
+                sc.tl.pca(adata_train_neighbor)
+                if rep == 'X_umap':
+                    print("Running UMAP on the adata_train_neighbor.")
+                    sc.tl.umap(adata_train_neighbor)
+                # Calculate the difference between the original adata_train and the neighboring adata_train.
+                diff = rep_difference(adata_train.obsm[rep], adata_train_neighbor.obsm[rep])
+                print(f"Diff in iteration {i}:", diff)
+                max_diff = max(max_diff, diff)
+                
+                del adata_train_neighbor
+                
+            # Estimated sensitivity
+            sensitivity_pca = max_diff
+            print(f"Estimated sensitivity for {rep_name} output:", sensitivity_pca)
     
         
 
