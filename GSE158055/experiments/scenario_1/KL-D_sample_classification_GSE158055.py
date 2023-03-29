@@ -34,8 +34,7 @@ RANDOM_SEED = 110011
 def main(num_kfold=5):
     # Run experimetns for the representation of UMAP and PCA.
     result_rep = dict()
-    #for rep in ['X_pca', 'X_umap']:
-    for rep in ['X_umap']:
+    for rep in ['X_pca', 'X_umap']:
         print("----------------Using an input representation: ", rep, " ------------------")
         if rep == 'X_umap':
             rep_name = 'UMAP'
@@ -50,7 +49,7 @@ def main(num_kfold=5):
         recall_score_list = []
         f1_score_list = []
         
-        for k in tqdm(range(4, num_kfold)):
+        for k in tqdm(range(num_kfold)):
             start_time = time.time()
             print(f"k_fold cross validation (split randomly for train and test): k={k}")
             print("Started at: ", start_time)
@@ -63,7 +62,7 @@ def main(num_kfold=5):
             
             # Output the number of unique samples from the dataframe of adata.obs.
             print("Number of unique samples: ", len(adata.obs['sampleID_label'].unique()))
-
+            
             # Add a new columns: covid_non_covid to adata.obs
             for index, row in adata.obs.iterrows():
                 if 'severe/critical' in row['CoVID-19 severity'] or 'mild/moderate' in row['CoVID-19 severity']:
@@ -228,7 +227,7 @@ def main(num_kfold=5):
         print(f"Reuslt of k_fold cross validation ({rep_name}): k={k}, acc={np.mean(acc_list)}, precision={np.mean(precision_score_list)}, recall={np.mean(recall_score_list)}, f1={np.mean(f1_score_list)}")
         print("----------------------------------------------------------------------")
         result_rep[rep_name] = result_k_fold
-    
+        
     print("result_rep:", result_rep)
 
 if __name__ == "__main__":
