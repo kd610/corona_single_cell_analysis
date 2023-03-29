@@ -10,14 +10,8 @@ Get KDEs of covid and non-covid from UMAP or PCA representation (UMAP/PCA~2), an
 import numpy as np
 import pandas as pd
 import scanpy as sc
-import matplotlib.pyplot as plt
-from matplotlib.ticker import NullFormatter
-import scipy.stats as st
 from scipy import stats
-from sklearn.model_selection import train_test_split
-from helper_func import n_random_sampling, KL_div, plot_dist_train_test
-from scipy.stats import norm  
-from matplotlib import pyplot as plt
+from helper_func import KL_div
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 import argparse
 import warnings
@@ -91,12 +85,13 @@ def main(num_kfold=5):
             del covid_non_covid_vector
             del batch_vector
             
+            # Add Gaussian noise to the basis values of the train samples.
             df_exist  = df_pds.query("batch == 'ref'")
             #print(df_exist['basis_value'].values)
             exist_vectors_with_noise = add_gaussian_noise(df_exist['basis_value'].values, sensitivity[rep_name], 2, 1/len(df_exist))
             df_exist['basis_value'] = exist_vectors_with_noise
-            #print("Done applying DP!")
-            print(exist_vectors_with_noise)
+            print("Done applying DP!")
+            #print(exist_vectors_with_noise)
             del exist_vectors_with_noise
             
             # Get covid vectors and non-covid vectors from UMAP representation on the train (existing sample) data.
