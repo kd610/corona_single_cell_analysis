@@ -14,36 +14,121 @@ from numpy.random import default_rng
 from sklearn.model_selection import train_test_split
 import sys
 from scipy.stats import laplace
+from scipy.sparse import csr_matrix, vstack
 
 
 warnings.filterwarnings("ignore")
 
-#np.random.seed(41)
+np.random.seed(41)
 sc.settings.verbosity = 0 # verbosity: errors (0), warnings (1), info (2), hints (3)
 #sc.logging.print_versions()
 RANDOM_SEED = 110011
 
-def apply_DP(adata, sensitivity, epsilon):
+def get_size_gb(matrix):
+    if isinstance(matrix, np.ndarray):
+        # If it's a NumPy array (dense matrix)
+        size_bytes = matrix.nbytes
+    elif isinstance(matrix, csr_matrix):
+        # If it's a CSR sparse matrix
+        size_bytes = matrix.data.nbytes + matrix.indptr.nbytes + matrix.indices.nbytes
+    else:
+        raise ValueError("Unsupported matrix type.")
+
+    size_gb = size_bytes / (1024 * 1024 * 1024)
+    return size_gb
+
+# def apply_DP(adata, sensitivity, epsilon):
+#     '''
+#     Apply differential privacy to the data
+#     X: numpy array
+#     sensitivity: float
+#     epsilon: float
+#     return: numpy array
+#     '''
+#     print("Start applying DP...")
+#     print("Sensitivity: ", sensitivity)
+#     print("Epsilon: ", epsilon)
+    
+#     # Convert the dense matrix to a pandas DataFrame
+#     X_df = pd.DataFrame(adata.X.toarray())
+
+#     # Generate Laplace noise
+    
+#     print("Start adding noise...")
+#     f = lambda x: x + np.random.laplace(loc=0, scale=sensitivity/epsilon)
+#     # Apply the Laplace noise to the DataFrame
+#     X_noisy_df = X_df.applymap(f)
+#     del X_df
+    
+#     # Convert the noisy DataFrame back to a CSR sparse matrix
+#     X_noisy_sparse = csr_matrix(X_noisy_df.values)
+#     del X_noisy_df
+    
+#     # Assign the noisy sparse matrix back to adata.X
+#     adata.X = X_noisy_sparse
+    
+#     # for i in tqdm(range(adata.X.shape[0])):  
+#     #     laplace_noise = np.random.laplace(scale=scale_cells, size=adata.X.shape[1])
+        
+#     #     lambda x: x + np.random.laplace(loc=0, scale=1/epsilon)
+#     #     # Apply input perturbation
+#     #     adata.X[i] = adata.X[i] + laplace_noise
+        
+#         # Addding LAPLACE noise to the adata.X from 0 to 10
+#         #laplace_noise = np.random.laplace(scale=scale_cells, size=adata.X.shape[1])
+    
+#     print("Finish adding noise...")
+    
+#     return adata
+
+def apply_DP(adata, sensitivity, epsilon, chunk_size=1000):
     '''
     Apply differential privacy to the data
-    X: numpy array
+    adata: AnnData object
     sensitivity: float
     epsilon: float
-    return: numpy array
+    chunk_size: int, number of rows to process at a time
     '''
     print("Start applying DP...")
     print("Sensitivity: ", sensitivity)
     print("Epsilon: ", epsilon)
-    # Laplace noise scale parameter (cell-level)
-    scale_cells = sensitivity / epsilon
-
-    # Generate Laplace noise
-    laplace_noise = laplace.rvs(scale=scale_cells, size=adata.X.shape)
-    # Apply input perturbation
-    adata.X = adata.X + laplace_noise
-    print("Done!")
     
-    return adata
+    # Get the sparse matrix from adata.X
+    X_sparse = adata.X.copy()
+
+    # Calculate the number of chunks to process
+    num_chunks = (X_sparse.shape[0] + chunk_size - 1) // chunk_size
+
+    # Generate and add Laplace noise in chunks
+    print("Start adding noise...")
+    print("Number of chunks: ", num_chunks)
+    for i in tqdm(range(num_chunks)):
+        # Get the current chunk's start and end row indices
+        start_row = i * chunk_size
+        end_row = min((i + 1) * chunk_size, X_sparse.shape[0])
+        print("Start row: ", start_row)
+        print("End row: ", end_row)
+
+        # Get the current chunk as a dense matrix
+        chunk_dense = X_sparse[start_row:end_row].toarray()
+
+        # Generate Laplace noise for the current chunk
+        laplace_noise = np.random.laplace(loc=0, scale=sensitivity/epsilon, size=chunk_dense.shape)
+
+        # Add Laplace noise to the current chunk
+        chunk_noisy = chunk_dense + laplace_noise
+        del chunk_dense
+
+        # Convert the noisy chunk back to a sparse matrix
+        chunk_noisy_sparse = csr_matrix(chunk_noisy)
+        del chunk_noisy
+
+        # Update the corresponding rows in adata.X directly
+        adata.X[start_row:end_row] = chunk_noisy_sparse
+        del chunk_noisy_sparse
+
+
+    print("Finish adding noise...")
 
 def n_random_sampling(adata, n=1, max_samples_covid=128, max_samples_control=28, RANDOM_SEED=110011):
     # Set the maximum number of samples for each severity group
@@ -86,14 +171,12 @@ def n_random_sampling(adata, n=1, max_samples_covid=128, max_samples_control=28,
 
     return k_sets_samples_severe_critical, k_set_samples_mild_moderate, k_sets_samples_control
 
-def main(num_kfold=5):
+def main(num_kfold=5, save_add_noise_adata=False):
     # Read adata
     print("Reading a h5ad data file...")
-    adata_all = sc.read_h5ad('./data/GSE_158055_COVID19_ALL.h5ad')
-
-    # Apply DP
-    adata = apply_DP(adata_all, sensitivity=1, epsilon=1.0)
-    del adata_all
+    adata = sc.read_h5ad('./data/GSE_158055_COVID19_ALL.h5ad')
+    #print("adada shape: ", adata.X.shape)
+    #print(adata_all.X)
     
     # Delete objects to prepare for splitting the adata to train and test.
     del adata.uns['neighbors']
@@ -116,9 +199,9 @@ def main(num_kfold=5):
     k_sets_samples_severe_critical, k_set_samples_mild_moderate, k_sets_samples_control = \
                                                                     n_random_sampling(adata, num_dataset_sampling, max_samples_covid, max_samples_control)
                                                                     
-    print("Sets of samples for severe/critical: ", k_sets_samples_severe_critical)
-    print("Sets of samples for mild/moderate: ", k_set_samples_mild_moderate)
-    print("Sets of samples for control: ", k_sets_samples_control)
+    # print("Sets of samples for severe/critical: ", k_sets_samples_severe_critical)
+    # print("Sets of samples for mild/moderate: ", k_set_samples_mild_moderate)
+    # print("Sets of samples for control: ", k_sets_samples_control)
 
     # n-random sampling from the adata. (Default is 1 with the maximum number of samples for covid and control that can be handled by the memory.)
     for i in range(num_dataset_sampling):       
@@ -134,6 +217,17 @@ def main(num_kfold=5):
         #assert adata.obs['sampleID_label'].unique().size == (len(k_sets_samples_severe_critical[i])+len(k_set_samples_mild_moderate[i])+len(k_sets_samples_control[i]))
         result_k_dataset_clip = dict()
         
+        adata_X_size_gb = get_size_gb(adata.X)
+        print(f"Size of adata.X: {adata_X_size_gb} GB")
+        print("the size of adata.X: ", adata.X.shape)
+        
+        # Apply DP
+        adata = apply_DP(adata, sensitivity=1, epsilon=1.0, chunk_size=500)
+        
+        if save_add_noise_adata:
+            print("Saving the adata with added noise...")
+            adata.write_h5ad('./data/GSE_158055_COVID19_clipped_ALL_DP.h5ad')
+            
         # Run experimetns for the representation of UMAP and PCA.
         result_rep = dict()
         for rep in ['X_pca', 'X_umap']:
@@ -160,7 +254,23 @@ def main(num_kfold=5):
                 adata_test = adata[adata.obs['contain_y_test'] == True,:].copy()
                 
                 # Delete adata to free up memory.
-                #del adata
+                del adata
+                
+                # adata_X_size_gb = get_size_gb(adata.X)
+                # print(f"Size of adata.X: {adata_X_size_gb} GB")
+                print("the size of adata.X: ", adata_train.X.shape)
+                
+                # # Apply DP
+                # print("Apply Dp to the adata_train.")
+                # adata_train = apply_DP(adata_train, sensitivity=1, epsilon=1.0, chunk_size=500) 
+                
+                
+                # # if save_add_noise_adata:
+                # #     print("Saving the adata with added noise...")
+                # #     adata.write_h5ad('./data/GSE_158055_COVID19_clipped_ALL_DP.h5ad')
+                
+                # print("Apply Dp to the adata_test.")
+                # adata_test = apply_DP(adata_test, sensitivity=1, epsilon=1.0, chunk_size=1000) 
                 
                 print("Run PCA and UMAP on the adata_train.")
                 # Run PCA and neighbour graph on the adata_train. 
@@ -191,8 +301,15 @@ if __name__ == "__main__":
     # Define the arguments
     #parser.add_argument('--num_dataset_sampling', type=int, help='Number of k times splitting/clipping the dataset',)
     parser.add_argument('--num_kfold', type=int, help='Number of k fold cross validation', default=5)
+    parser.add_argument('--save_add_noise_adata', type=str, help='Save the adata with added noise to a h5ad file', default='False')
     # Parse the arguments
     args = parser.parse_args()
 
-    main(num_kfold=args.num_kfold)
+    # Conver the string to bool.
+    if args.save_add_noise_adata == 'True':
+        save_add_noise_adata = True 
+    else:
+        save_add_noise_adata = False
+        
+    main(num_kfold=args.num_kfold, save_add_noise_adata=save_add_noise_adata)
                 
