@@ -23,6 +23,7 @@ import argparse
 import warnings
 from tqdm import tqdm
 import time
+from helper_func_dp import add_gaussian_noise
 warnings.filterwarnings("ignore")
 
 
@@ -90,9 +91,17 @@ def main(num_kfold=5):
             del covid_non_covid_vector
             del batch_vector
             
+            df_exist  = df_pds.query("batch == 'ref'")
+            #print(df_exist['basis_value'].values)
+            exist_vectors_with_noise = add_gaussian_noise(df_exist['basis_value'].values, sensitivity[rep_name], 2, 1/len(df_exist))
+            df_exist['basis_value'] = exist_vectors_with_noise
+            #print("Done applying DP!")
+            print(exist_vectors_with_noise)
+            del exist_vectors_with_noise
+            
             # Get covid vectors and non-covid vectors from UMAP representation on the train (existing sample) data.
-            ext_covid_vector = df_pds.query("batch == 'ref' and not sample.str.contains('control')")['basis_value'].values
-            ext_non_covid_vector = df_pds.query("batch == 'ref' and sample.str.contains('control')")['basis_value'].values
+            ext_covid_vector = df_exist.query("not sample.str.contains('control')")['basis_value'].values
+            ext_non_covid_vector = df_exist.query("sample.str.contains('control')")['basis_value'].values
 
             new_covid_vector = []
 
@@ -106,8 +115,6 @@ def main(num_kfold=5):
 
             ext_covid_vector = np.array(new_covid_vector)
             ext_non_covid_vector = np.array(new_non_covid_vector)
-            
-            print("ext_covid_vector.shape: ", ext_covid_vector.shape)
             
             del new_covid_vector
             del new_non_covid_vector
