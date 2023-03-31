@@ -1,7 +1,3 @@
-"""
-Due to the memory limitation, we may not want to use this script to generate the adata for k-fold cross validation.
-Recommended to use the script: generate_k_fold_adata.ipynb to generate the adata for k-fold cross validation.
-"""
 
 import numpy as np
 import pandas as pd
